@@ -2,6 +2,7 @@ import os
 import uuid
 import asyncio
 import threading
+import shutil
 from pathlib import Path
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
@@ -18,7 +19,7 @@ from pydantic import BaseModel
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "").strip().rstrip("/")
 DOWNLOAD_DIR = Path("/tmp/downloads")
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
-DOWNLOAD_TIMEOUT = 120
+DOWNLOAD_TIMEOUT = 180
 FILE_TTL = 600
 CLEANUP_INTERVAL = 120
 RATE_LIMIT_REQUESTS = 5
@@ -105,8 +106,6 @@ def schedule_cleanup():
 def startup_event():
     schedule_cleanup()
     print(f"[startup] CORS origins: {CORS_ORIGINS}")
-    # نتأكد إن ffmpeg متثبت
-    import shutil
     ffmpeg_path = shutil.which("ffmpeg")
     if ffmpeg_path:
         print(f"[startup] ffmpeg found at: {ffmpeg_path}")
@@ -141,7 +140,6 @@ def get_backend_base(request: Request) -> str:
 # ──────────────────────────────────────────────
 @app.get("/")
 def health():
-    import shutil
     return {
         "status": "ok",
         "service": "video-downloader-api",
@@ -165,12 +163,16 @@ async def download_video(payload: DownloadRequest, request: Request):
         "yt-dlp",
         "--no-playlist",
         "--max-filesize", "500m",
-        "--format", "bestvideo[ext=mp4][vcodec^=avc]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio/best[ext=mp4]/best",
+        "--format", "bestvideo[ext=mp4][vcodec^=avc]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
         "--merge-output-format", "mp4",
         "--output", output_template,
         "--no-part",
         "--no-mtime",
         "--restrict-filenames",
+        # نجبر ffmpeg يعمل re-encode بـ H.264 + AAC + yuv420p (متوافق مع iPhone و Safari)
+        "--postprocessor-args",
+        "ffmpeg:-c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart",
+        "--recode-video", "mp4",
         "--verbose",
         "--",
         url,
