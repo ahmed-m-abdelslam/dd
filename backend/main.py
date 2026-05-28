@@ -32,6 +32,7 @@ ALLOWED_DOMAINS = {
     "threads.net", "www.threads.net",
     "x.com", "www.x.com", "twitter.com", "www.twitter.com",
     "linkedin.com", "www.linkedin.com",
+    "tiktok.com", "www.tiktok.com", "m.tiktok.com", "vm.tiktok.com", "vt.tiktok.com",
 }
 
 VALID_EXTENSIONS = {".mp4", ".mkv", ".webm", ".mov", ".m4a", ".mp3"}

@@ -9,6 +9,7 @@ const PLATFORMS = [
   "YouTube",
   "Facebook",
   "Instagram",
+  "TikTok",
   "Threads",
   "X / Twitter",
   "LinkedIn",
@@ -213,7 +214,7 @@ export default function Home() {
             <span className="title-accent">Downloader</span>
           </h1>
           <p className="subtitle">
-            Download videos from YouTube, Facebook, Instagram, Threads, X, and LinkedIn in one click.
+            Download videos from YouTube, Facebook, Instagram, TikTok, Threads, X, and LinkedIn in one click.
           </p>
 
           {/* Platform badges */}
