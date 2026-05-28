@@ -1,30 +1,28 @@
 import os
 import uuid
 import asyncio
-import subprocess
 import threading
 from pathlib import Path
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
 from collections import defaultdict
-from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel
 
 # ──────────────────────────────────────────────
 # Configuration
 # ──────────────────────────────────────────────
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "").strip().rstrip("/")
 DOWNLOAD_DIR = Path("/tmp/downloads")
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
-DOWNLOAD_TIMEOUT = 120          # seconds
-FILE_TTL = 600                  # 10 minutes
-CLEANUP_INTERVAL = 120          # run cleanup every 2 minutes
-RATE_LIMIT_REQUESTS = 5         # requests per window
-RATE_LIMIT_WINDOW = 60          # seconds
+DOWNLOAD_TIMEOUT = 120
+FILE_TTL = 600
+CLEANUP_INTERVAL = 120
+RATE_LIMIT_REQUESTS = 5
+RATE_LIMIT_WINDOW = 60
 
 ALLOWED_DOMAINS = {
     "youtube.com", "www.youtube.com", "youtu.be", "m.youtube.com",
@@ -36,27 +34,42 @@ ALLOWED_DOMAINS = {
 }
 
 # ──────────────────────────────────────────────
+# Build origins list — always include localhost for testing
+# ──────────────────────────────────────────────
+def build_origins() -> list[str]:
+    origins = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
+    if FRONTEND_URL:
+        origins.append(FRONTEND_URL)
+        # also allow www. variant just in case
+        if FRONTEND_URL.startswith("https://") and not FRONTEND_URL.startswith("https://www."):
+            origins.append(FRONTEND_URL.replace("https://", "https://www.", 1))
+    return origins
+
+CORS_ORIGINS = build_origins()
+
+# ──────────────────────────────────────────────
 # App setup
 # ──────────────────────────────────────────────
 app = FastAPI(title="Video Downloader API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FRONTEND_URL],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
 # ──────────────────────────────────────────────
-# In-memory rate limiting (IP → list of timestamps)
+# Rate limiting
 # ──────────────────────────────────────────────
 rate_store: dict[str, list[datetime]] = defaultdict(list)
 rate_lock = threading.Lock()
 
-
 def check_rate_limit(ip: str) -> bool:
-    """Returns True if the request is allowed."""
     now = datetime.utcnow()
     window_start = now - timedelta(seconds=RATE_LIMIT_WINDOW)
     with rate_lock:
@@ -66,7 +79,6 @@ def check_rate_limit(ip: str) -> bool:
             return False
         rate_store[ip].append(now)
         return True
-
 
 # ──────────────────────────────────────────────
 # Background file cleanup
@@ -82,25 +94,22 @@ def cleanup_old_files():
                 except OSError:
                     pass
 
-
 def schedule_cleanup():
     cleanup_old_files()
     timer = threading.Timer(CLEANUP_INTERVAL, schedule_cleanup)
     timer.daemon = True
     timer.start()
 
-
 @app.on_event("startup")
 def startup_event():
     schedule_cleanup()
-
+    print(f"[startup] CORS origins: {CORS_ORIGINS}")
 
 # ──────────────────────────────────────────────
 # Helpers
 # ──────────────────────────────────────────────
 class DownloadRequest(BaseModel):
     url: str
-
 
 def validate_url(raw_url: str) -> str:
     try:
@@ -114,24 +123,20 @@ def validate_url(raw_url: str) -> str:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-
 def get_backend_base(request: Request) -> str:
     forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme)
     forwarded_host = request.headers.get("x-forwarded-host", request.url.netloc)
     return f"{forwarded_proto}://{forwarded_host}"
-
 
 # ──────────────────────────────────────────────
 # Endpoints
 # ──────────────────────────────────────────────
 @app.get("/")
 def health():
-    return {"status": "ok", "service": "video-downloader-api"}
-
+    return {"status": "ok", "service": "video-downloader-api", "cors_origins": CORS_ORIGINS}
 
 @app.post("/api/download")
 async def download_video(payload: DownloadRequest, request: Request):
-    # Rate limiting
     client_ip = request.headers.get("x-forwarded-for", request.client.host).split(",")[0].strip()
     if not check_rate_limit(client_ip):
         raise HTTPException(status_code=429, detail="Too many requests. Please wait a moment.")
@@ -160,7 +165,7 @@ async def download_video(payload: DownloadRequest, request: Request):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             ),
-            timeout=5,  # subprocess creation timeout
+            timeout=10,
         )
         try:
             stdout, stderr = await asyncio.wait_for(
@@ -176,7 +181,6 @@ async def download_video(payload: DownloadRequest, request: Request):
 
     if proc.returncode != 0:
         err_msg = stderr.decode(errors="replace").strip()
-        # Surface friendly messages
         if "Unsupported URL" in err_msg or "Unable to extract" in err_msg:
             raise HTTPException(status_code=422, detail="Could not extract video from this URL. It may be private or unsupported.")
         if "Private video" in err_msg or "login required" in err_msg.lower():
@@ -185,7 +189,6 @@ async def download_video(payload: DownloadRequest, request: Request):
             raise HTTPException(status_code=403, detail="DRM-protected content cannot be downloaded.")
         raise HTTPException(status_code=422, detail=f"Download failed: {err_msg[:300]}")
 
-    # Find the output file
     matches = list(DOWNLOAD_DIR.glob(f"{file_id}.*"))
     if not matches:
         raise HTTPException(status_code=500, detail="Download appeared to succeed but no file was found.")
@@ -200,10 +203,8 @@ async def download_video(payload: DownloadRequest, request: Request):
         "filename": filename,
     }
 
-
 @app.get("/api/file/{file_id}")
 def serve_file(file_id: str):
-    # Sanitize: only allow safe characters in file_id
     safe_chars = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
     if not all(c in safe_chars for c in file_id) or ".." in file_id or "/" in file_id:
         raise HTTPException(status_code=400, detail="Invalid file ID.")
