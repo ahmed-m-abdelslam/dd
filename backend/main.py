@@ -33,6 +33,8 @@ ALLOWED_DOMAINS = {
     "linkedin.com", "www.linkedin.com",
 }
 
+VALID_EXTENSIONS = {".mp4", ".mkv", ".webm", ".mov", ".m4a", ".mp3"}
+
 # ──────────────────────────────────────────────
 # Build origins list
 # ──────────────────────────────────────────────
@@ -153,6 +155,9 @@ async def download_video(payload: DownloadRequest, request: Request):
         "--format", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
         "--merge-output-format", "mp4",
         "--output", output_template,
+        "--no-part",
+        "--no-mtime",
+        "--restrict-filenames",
         "--verbose",
         "--",
         url,
@@ -199,20 +204,50 @@ async def download_video(payload: DownloadRequest, request: Request):
             raise HTTPException(status_code=403, detail="DRM-protected content cannot be downloaded.")
         raise HTTPException(status_code=422, detail=f"Download failed: {err_msg[:300]}")
 
-    matches = list(DOWNLOAD_DIR.glob(f"{file_id}.*"))
+    # ─── Find the downloaded file ───
+    all_files = list(DOWNLOAD_DIR.glob(f"{file_id}*"))
+    matches = [
+        f for f in all_files
+        if f.is_file() and f.suffix.lower() in VALID_EXTENSIONS
+    ]
+
     if not matches:
-        print(f"[ERROR] No file found after download for ID: {file_id}")
+        print(f"[ERROR] No valid file found after download for ID: {file_id}")
+        print(f"[ERROR] Files in dir: {[f.name for f in all_files]}")
         raise HTTPException(status_code=500, detail="Download appeared to succeed but no file was found.")
 
-    output_file = matches[0]
-    filename = f"video{output_file.suffix}"
+    # نختار أكبر ملف (عادةً الفيديو النهائي، مش الـ audio لوحده)
+    output_file = max(matches, key=lambda f: f.stat().st_size)
+    final_ext = output_file.suffix.lower()
+
+    # نعيد تسمية الملف لاسم نضيف عشان نتفادى الـ suffixes الغريبة من yt-dlp
+    clean_path = DOWNLOAD_DIR / f"{file_id}{final_ext}"
+    if output_file != clean_path:
+        try:
+            if clean_path.exists():
+                clean_path.unlink()
+            output_file.rename(clean_path)
+            output_file = clean_path
+            print(f"[download] Renamed to clean name: {output_file.name}")
+        except OSError as e:
+            print(f"[download] Rename failed: {e}, using original name")
+
+    # نمسح أي ملفات تانية متبقية بنفس الـ file_id
+    for f in all_files:
+        if f.exists() and f != output_file:
+            try:
+                f.unlink()
+            except OSError:
+                pass
+
+    filename = f"video{final_ext}"
     backend_base = get_backend_base(request)
 
-    print(f"[download] SUCCESS: {output_file.name}")
+    print(f"[download] SUCCESS: {output_file.name} ({output_file.stat().st_size} bytes)")
 
     return {
         "success": True,
-        "download_url": f"{backend_base}/api/file/{file_id}{output_file.suffix}",
+        "download_url": f"{backend_base}/api/file/{output_file.name}",
         "filename": filename,
     }
 
@@ -224,6 +259,8 @@ def serve_file(file_id: str):
 
     file_path = DOWNLOAD_DIR / file_id
     if not file_path.exists() or not file_path.is_file():
+        print(f"[serve_file] File not found: {file_id}")
+        print(f"[serve_file] Available files: {[f.name for f in DOWNLOAD_DIR.iterdir() if f.is_file()]}")
         raise HTTPException(status_code=404, detail="File not found or has expired.")
 
     ext = file_path.suffix.lstrip(".")
