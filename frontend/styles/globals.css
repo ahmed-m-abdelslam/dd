@@ -1,0 +1,300 @@
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg:        #0a0a0f;
+  --surface:   #111118;
+  --border:    #1e1e2e;
+  --border-hi: #2e2e4a;
+  --text:      #e8e8f0;
+  --muted:     #666680;
+  --accent:    #6c63ff;
+  --accent-hi: #8b84ff;
+  --accent-lo: #3d37cc;
+  --success:   #22d3a0;
+  --error:     #ff5f72;
+  --glow:      rgba(108, 99, 255, 0.35);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Noise grain overlay ── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+}
+
+/* ── Radial glow ── */
+.page-glow {
+  position: fixed;
+  top: -20%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 900px;
+  height: 600px;
+  background: radial-gradient(ellipse at center, rgba(108,99,255,0.12) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.page-wrapper {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+}
+
+/* ── Card ── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 2.5rem 2.5rem 2rem;
+  width: 100%;
+  max-width: 560px;
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.03) inset,
+    0 32px 80px rgba(0,0,0,0.5),
+    0 0 60px var(--glow);
+}
+
+/* ── Platform badges ── */
+.badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 2rem;
+}
+
+.badge {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-hi);
+  color: var(--muted);
+  background: rgba(255,255,255,0.02);
+  white-space: nowrap;
+}
+
+/* ── Input ── */
+.url-input {
+  width: 100%;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border-hi);
+  border-radius: 12px;
+  padding: 0.9rem 1.1rem;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.95rem;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.url-input::placeholder { color: var(--muted); }
+
+.url-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(108,99,255,0.15);
+}
+
+/* ── Button ── */
+.btn-primary {
+  width: 100%;
+  margin-top: 0.875rem;
+  padding: 0.9rem 1.5rem;
+  font-family: 'Syne', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-lo) 100%);
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+  box-shadow: 0 4px 24px rgba(108,99,255,0.4);
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-primary::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(rgba(255,255,255,0.08), transparent);
+  pointer-events: none;
+}
+
+.btn-primary:hover:not(:disabled) {
+  opacity: 0.92;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 32px rgba(108,99,255,0.55);
+}
+
+.btn-primary:active:not(:disabled) { transform: translateY(0); }
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* ── Download button ── */
+.btn-download {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  width: 100%;
+  margin-top: 1rem;
+  padding: 0.85rem 1.5rem;
+  font-family: 'Syne', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--success);
+  background: rgba(34,211,160,0.08);
+  border: 1px solid rgba(34,211,160,0.3);
+  border-radius: 12px;
+  text-decoration: none;
+  transition: background 0.2s, border-color 0.2s, transform 0.15s;
+}
+
+.btn-download:hover {
+  background: rgba(34,211,160,0.14);
+  border-color: rgba(34,211,160,0.5);
+  transform: translateY(-1px);
+}
+
+/* ── Status messages ── */
+.status-error {
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  background: rgba(255,95,114,0.08);
+  border: 1px solid rgba(255,95,114,0.25);
+  border-radius: 10px;
+  color: var(--error);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.status-success {
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  background: rgba(34,211,160,0.06);
+  border: 1px solid rgba(34,211,160,0.2);
+  border-radius: 10px;
+  color: var(--success);
+  font-size: 0.88rem;
+}
+
+/* ── Spinner ── */
+.spinner {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255,255,255,0.2);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  vertical-align: middle;
+  margin-right: 0.5rem;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Progress bar ── */
+.progress-bar-wrap {
+  margin-top: 1rem;
+  height: 3px;
+  background: var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-hi));
+  border-radius: 999px;
+  animation: indeterminate 1.6s ease-in-out infinite;
+  transform-origin: left;
+}
+
+@keyframes indeterminate {
+  0%   { transform: scaleX(0) translateX(0); }
+  50%  { transform: scaleX(0.5) translateX(80px); }
+  100% { transform: scaleX(0) translateX(400px); }
+}
+
+/* ── Typography ── */
+.title {
+  font-family: 'Syne', sans-serif;
+  font-size: clamp(1.6rem, 5vw, 2.1rem);
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: -0.02em;
+  margin: 0 0 0.4rem;
+  line-height: 1.15;
+}
+
+.subtitle {
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin: 0 0 1.75rem;
+  line-height: 1.5;
+}
+
+.label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+}
+
+.divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1.75rem 0;
+}
+
+.footer-note {
+  margin-top: 1.5rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.6;
+}
+
+.footer-note a {
+  color: var(--accent-hi);
+  text-decoration: none;
+}
+
+.footer-note a:hover { text-decoration: underline; }
