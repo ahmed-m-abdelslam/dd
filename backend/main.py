@@ -34,7 +34,7 @@ ALLOWED_DOMAINS = {
 }
 
 # ──────────────────────────────────────────────
-# Build origins list — always include localhost for testing
+# Build origins list
 # ──────────────────────────────────────────────
 def build_origins() -> list[str]:
     origins = [
@@ -43,7 +43,6 @@ def build_origins() -> list[str]:
     ]
     if FRONTEND_URL:
         origins.append(FRONTEND_URL)
-        # also allow www. variant just in case
         if FRONTEND_URL.startswith("https://") and not FRONTEND_URL.startswith("https://www."):
             origins.append(FRONTEND_URL.replace("https://", "https://www.", 1))
     return origins
@@ -142,6 +141,7 @@ async def download_video(payload: DownloadRequest, request: Request):
         raise HTTPException(status_code=429, detail="Too many requests. Please wait a moment.")
 
     url = validate_url(payload.url.strip())
+    print(f"[download] Starting download for URL: {url}")
 
     file_id = str(uuid.uuid4())
     output_template = str(DOWNLOAD_DIR / f"{file_id}.%(ext)s")
@@ -153,8 +153,8 @@ async def download_video(payload: DownloadRequest, request: Request):
         "--format", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
         "--merge-output-format", "mp4",
         "--output", output_template,
-        "--no-warnings",
-        "--quiet",
+        "--verbose",
+        "--",
         url,
     ]
 
@@ -181,21 +181,34 @@ async def download_video(payload: DownloadRequest, request: Request):
 
     if proc.returncode != 0:
         err_msg = stderr.decode(errors="replace").strip()
+        out_msg = stdout.decode(errors="replace").strip()
+        print("=" * 70)
+        print(f"[yt-dlp FAILED] URL: {url}")
+        print(f"[yt-dlp RETURN CODE]: {proc.returncode}")
+        print(f"[yt-dlp STDOUT]:\n{out_msg}")
+        print(f"[yt-dlp STDERR]:\n{err_msg}")
+        print("=" * 70)
+
         if "Unsupported URL" in err_msg or "Unable to extract" in err_msg:
             raise HTTPException(status_code=422, detail="Could not extract video from this URL. It may be private or unsupported.")
         if "Private video" in err_msg or "login required" in err_msg.lower():
             raise HTTPException(status_code=403, detail="This video is private or requires login.")
+        if "Sign in to confirm" in err_msg or "bot" in err_msg.lower():
+            raise HTTPException(status_code=403, detail="The video platform is blocking the server. Cookies may be required.")
         if "DRM" in err_msg:
             raise HTTPException(status_code=403, detail="DRM-protected content cannot be downloaded.")
         raise HTTPException(status_code=422, detail=f"Download failed: {err_msg[:300]}")
 
     matches = list(DOWNLOAD_DIR.glob(f"{file_id}.*"))
     if not matches:
+        print(f"[ERROR] No file found after download for ID: {file_id}")
         raise HTTPException(status_code=500, detail="Download appeared to succeed but no file was found.")
 
     output_file = matches[0]
     filename = f"video{output_file.suffix}"
     backend_base = get_backend_base(request)
+
+    print(f"[download] SUCCESS: {output_file.name}")
 
     return {
         "success": True,
