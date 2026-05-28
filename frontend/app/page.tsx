@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, FormEvent } from "react";
+import { useState, useRef, useEffect, FormEvent } from "react";
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -21,11 +21,12 @@ interface DownloadResult {
 }
 
 type Status = "idle" | "loading" | "success" | "error";
+type ToastType = "success" | "error" | null;
 
 // ── SVG icons ────────────────────────────────
-function DownloadIcon() {
+function DownloadIcon({ size = 16 }: { size?: number }) {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
       <polyline points="7 10 12 15 17 10"/>
       <line x1="12" y1="15" x2="12" y2="3"/>
@@ -33,9 +34,9 @@ function DownloadIcon() {
   );
 }
 
-function CheckIcon() {
+function CheckIcon({ size = 14 }: { size?: number }) {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="20 6 9 17 4 12"/>
     </svg>
   );
@@ -51,12 +52,93 @@ function AlertIcon() {
   );
 }
 
+function PasteIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+      <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+    </svg>
+  );
+}
+
+function XIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="6" x2="6" y2="18"/>
+      <line x1="6" y1="6" x2="18" y2="18"/>
+    </svg>
+  );
+}
+
+function LogoIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+      <polyline points="7 10 12 15 17 10"/>
+      <line x1="12" y1="15" x2="12" y2="3"/>
+    </svg>
+  );
+}
+
 export default function Home() {
   const [url, setUrl] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [result, setResult] = useState<DownloadResult | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
+  const [loadingStep, setLoadingStep] = useState(0);
+  const [toast, setToast] = useState<{ type: ToastType; msg: string }>({ type: null, msg: "" });
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Cycle through loading steps for nice UX
+  useEffect(() => {
+    if (status !== "loading") {
+      setLoadingStep(0);
+      return;
+    }
+    const timers = [
+      setTimeout(() => setLoadingStep(1), 800),
+      setTimeout(() => setLoadingStep(2), 4000),
+      setTimeout(() => setLoadingStep(3), 12000),
+    ];
+    return () => timers.forEach(clearTimeout);
+  }, [status]);
+
+  // Show toast and auto-dismiss
+  useEffect(() => {
+    if (toast.type) {
+      const t = setTimeout(() => setToast({ type: null, msg: "" }), 4000);
+      return () => clearTimeout(t);
+    }
+  }, [toast]);
+
+  // Keyboard shortcuts: Esc resets
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && status !== "loading") {
+        reset();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
+
+  async function handlePaste() {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        setUrl(text.trim());
+        inputRef.current?.focus();
+      }
+    } catch {
+      setToast({ type: "error", msg: "Couldn't access clipboard. Paste manually." });
+    }
+  }
+
+  function handleClear() {
+    setUrl("");
+    inputRef.current?.focus();
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -85,11 +167,13 @@ export default function Home() {
 
       setResult(data as DownloadResult);
       setStatus("success");
+      setToast({ type: "success", msg: "Video downloaded successfully!" });
     } catch (err: unknown) {
       const msg =
         err instanceof Error ? err.message : "An unexpected error occurred.";
       setErrorMsg(msg);
       setStatus("error");
+      setToast({ type: "error", msg: "Download failed." });
     }
   }
 
@@ -101,15 +185,35 @@ export default function Home() {
     setTimeout(() => inputRef.current?.focus(), 50);
   }
 
+  const steps = [
+    "Connecting to source",
+    "Fetching video data",
+    "Downloading media",
+    "Processing & finalizing",
+  ];
+
   return (
     <>
       <div className="page-glow" aria-hidden />
+      <div className="page-glow-secondary" aria-hidden />
+
       <div className="page-wrapper">
+        {/* Brand header */}
+        <div className="brand-header">
+          <div className="brand-logo">
+            <LogoIcon />
+          </div>
+          <span className="brand-name">VidGrab</span>
+        </div>
+
         <main className="card">
           {/* Header */}
-          <h1 className="title">Universal Video&nbsp;Downloader</h1>
+          <h1 className="title">
+            Universal Video<br />
+            <span className="title-accent">Downloader</span>
+          </h1>
           <p className="subtitle">
-            Download videos from YouTube, Facebook, Instagram, Threads, X, and LinkedIn.
+            Download videos from YouTube, Facebook, Instagram, Threads, X, and LinkedIn in one click.
           </p>
 
           {/* Platform badges */}
@@ -122,19 +226,45 @@ export default function Home() {
           {/* Form */}
           <form onSubmit={handleSubmit} noValidate>
             <label htmlFor="video-url" className="label">Video URL</label>
-            <input
-              ref={inputRef}
-              id="video-url"
-              type="url"
-              className="url-input"
-              placeholder="Paste video link here…"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              disabled={status === "loading"}
-              autoFocus
-              autoComplete="off"
-              spellCheck={false}
-            />
+
+            <div className="input-wrap">
+              <input
+                ref={inputRef}
+                id="video-url"
+                type="url"
+                className="url-input"
+                placeholder="Paste video link here…"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                disabled={status === "loading"}
+                autoFocus
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <div className="input-actions">
+                {url && status !== "loading" && (
+                  <button
+                    type="button"
+                    className="input-action-btn"
+                    onClick={handleClear}
+                    aria-label="Clear input"
+                    title="Clear"
+                  >
+                    <XIcon />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="input-action-btn"
+                  onClick={handlePaste}
+                  disabled={status === "loading"}
+                  aria-label="Paste from clipboard"
+                  title="Paste from clipboard"
+                >
+                  <PasteIcon />
+                </button>
+              </div>
+            </div>
 
             <button
               type="submit"
@@ -144,22 +274,42 @@ export default function Home() {
               {status === "loading" ? (
                 <>
                   <span className="spinner" aria-hidden />
-                  Downloading…
+                  Working on it…
                 </>
               ) : (
                 <>
                   <DownloadIcon />
-                  {" "}Download Video
+                  Download Video
                 </>
               )}
             </button>
           </form>
 
-          {/* Loading progress */}
+          {/* Loading state */}
           {status === "loading" && (
-            <div className="progress-bar-wrap" role="progressbar" aria-label="Downloading">
-              <div className="progress-bar-fill" />
-            </div>
+            <>
+              <div className="progress-bar-wrap" role="progressbar" aria-label="Downloading">
+                <div className="progress-bar-fill" />
+              </div>
+
+              <div className="loading-steps">
+                {steps.map((label, i) => {
+                  const isDone = i < loadingStep;
+                  const isActive = i === loadingStep;
+                  return (
+                    <div
+                      key={label}
+                      className={`step ${isActive ? "active" : ""} ${isDone ? "done" : ""}`}
+                    >
+                      <span className="step-indicator">
+                        {isDone && <CheckIcon size={10} />}
+                      </span>
+                      <span>{label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           )}
 
           {/* Error */}
@@ -169,20 +319,7 @@ export default function Home() {
                 <AlertIcon />
                 <span>{errorMsg}</span>
               </div>
-              <button
-                onClick={reset}
-                style={{
-                  marginTop: "0.65rem",
-                  background: "none",
-                  border: "none",
-                  color: "inherit",
-                  cursor: "pointer",
-                  fontSize: "0.82rem",
-                  padding: 0,
-                  textDecoration: "underline",
-                  opacity: 0.8,
-                }}
-              >
+              <button onClick={reset} className="btn-text-link">
                 Try again
               </button>
             </div>
@@ -194,7 +331,7 @@ export default function Home() {
               <div className="status-success" role="status">
                 <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
                   <CheckIcon />
-                  <span>Video is ready — click below to save it.</span>
+                  <span>Your video is ready — click below to save it.</span>
                 </div>
               </div>
 
@@ -209,33 +346,46 @@ export default function Home() {
 
               <hr className="divider" />
 
-              <button
-                onClick={reset}
-                style={{
-                  width: "100%",
-                  background: "none",
-                  border: "none",
-                  color: "var(--muted)",
-                  cursor: "pointer",
-                  fontSize: "0.85rem",
-                  padding: "0.25rem",
-                  transition: "color 0.15s",
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text)")}
-                onMouseLeave={(e) => (e.currentTarget.style.color = "var(--muted)")}
-              >
+              <button onClick={reset} className="btn-reset">
                 ↩ Download another video
               </button>
             </>
           )}
+
+          {/* Keyboard hint */}
+          {status === "idle" && (
+            <div className="kbd-hint" style={{ marginTop: "1rem", justifyContent: "center", display: "flex" }}>
+              Press <span className="kbd">Esc</span> to clear at any time
+            </div>
+          )}
         </main>
 
-        <p className="footer-note">
+        <div className="footer-note">
           For personal use only. Respect platform terms of service and copyright law.
           <br />
           Files expire after 10 minutes. No data is stored permanently.
-        </p>
+
+          <div className="footer-links">
+            <a href="#" onClick={(e) => e.preventDefault()}>Privacy</a>
+            <a href="#" onClick={(e) => e.preventDefault()}>Terms</a>
+            <a href="#" onClick={(e) => e.preventDefault()}>How it works</a>
+          </div>
+
+          <div className="footer-credit">
+            Made with <span className="heart">♥</span> for the open web
+          </div>
+        </div>
       </div>
+
+      {/* Toast notification */}
+      {toast.type && (
+        <div className="toast-container">
+          <div className={`toast ${toast.type}`}>
+            {toast.type === "success" ? <CheckIcon /> : <AlertIcon />}
+            <span>{toast.msg}</span>
+          </div>
+        </div>
+      )}
     </>
   );
 }
