@@ -105,6 +105,13 @@ def schedule_cleanup():
 def startup_event():
     schedule_cleanup()
     print(f"[startup] CORS origins: {CORS_ORIGINS}")
+    # نتأكد إن ffmpeg متثبت
+    import shutil
+    ffmpeg_path = shutil.which("ffmpeg")
+    if ffmpeg_path:
+        print(f"[startup] ffmpeg found at: {ffmpeg_path}")
+    else:
+        print("[startup] WARNING: ffmpeg NOT FOUND! Video+audio merging will fail.")
 
 # ──────────────────────────────────────────────
 # Helpers
@@ -134,7 +141,13 @@ def get_backend_base(request: Request) -> str:
 # ──────────────────────────────────────────────
 @app.get("/")
 def health():
-    return {"status": "ok", "service": "video-downloader-api", "cors_origins": CORS_ORIGINS}
+    import shutil
+    return {
+        "status": "ok",
+        "service": "video-downloader-api",
+        "cors_origins": CORS_ORIGINS,
+        "ffmpeg_available": shutil.which("ffmpeg") is not None,
+    }
 
 @app.post("/api/download")
 async def download_video(payload: DownloadRequest, request: Request):
@@ -152,7 +165,7 @@ async def download_video(payload: DownloadRequest, request: Request):
         "yt-dlp",
         "--no-playlist",
         "--max-filesize", "500m",
-        "--format", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "--format", "bestvideo[ext=mp4][vcodec^=avc]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio/best[ext=mp4]/best",
         "--merge-output-format", "mp4",
         "--output", output_template,
         "--no-part",
@@ -216,7 +229,7 @@ async def download_video(payload: DownloadRequest, request: Request):
         print(f"[ERROR] Files in dir: {[f.name for f in all_files]}")
         raise HTTPException(status_code=500, detail="Download appeared to succeed but no file was found.")
 
-    # نختار أكبر ملف (عادةً الفيديو النهائي، مش الـ audio لوحده)
+    # نختار أكبر ملف (عادةً الفيديو النهائي المدمج)
     output_file = max(matches, key=lambda f: f.stat().st_size)
     final_ext = output_file.suffix.lower()
 
@@ -237,6 +250,7 @@ async def download_video(payload: DownloadRequest, request: Request):
         if f.exists() and f != output_file:
             try:
                 f.unlink()
+                print(f"[download] Cleaned up leftover: {f.name}")
             except OSError:
                 pass
 
@@ -263,8 +277,19 @@ def serve_file(file_id: str):
         print(f"[serve_file] Available files: {[f.name for f in DOWNLOAD_DIR.iterdir() if f.is_file()]}")
         raise HTTPException(status_code=404, detail="File not found or has expired.")
 
-    ext = file_path.suffix.lstrip(".")
-    media_type = "video/mp4" if ext == "mp4" else "application/octet-stream"
+    ext = file_path.suffix.lstrip(".").lower()
+    media_type_map = {
+        "mp4": "video/mp4",
+        "webm": "video/webm",
+        "mkv": "video/x-matroska",
+        "mov": "video/quicktime",
+        "m4a": "audio/mp4",
+        "mp3": "audio/mpeg",
+    }
+    media_type = media_type_map.get(ext, "application/octet-stream")
+
+    file_size = file_path.stat().st_size
+    print(f"[serve_file] Serving {file_path.name} ({file_size} bytes, type={media_type})")
 
     return FileResponse(
         path=str(file_path),
